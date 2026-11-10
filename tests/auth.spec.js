@@ -30,7 +30,7 @@ test("registered user can log in", async ({ page }) => {
 
 // Exercise 5: the welcome page shows how many users are registered
 test("welcome page shows the number of registered users", async ({ page }) => {
-  await submitForm(page, username, "secret123", "Log in");
+  await submitForm(page, username, "else", "Log in");
 
   await expect(page.getByText(/^\d+ registered users?$/)).toBeVisible();
 });
