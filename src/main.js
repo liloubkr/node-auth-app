@@ -58,7 +58,7 @@ function renderForm(mode) {
 function renderWelcome() {
   app.innerHTML = `
     <h1></h1>
-    <p>You are logged in.</p>
+    <p>You are logged in. Deployed automatically by CI/CD 🚀</p>
     <p class="user-count">Loading user count…</p>
     <button type="button">Log out</button>`;
   app.querySelector("h1").textContent = `Welcome, ${currentUser}!`;
