@@ -1,0 +1,77 @@
+# Every push to main: build the images, test them with Playwright against the
+# full stack (db + backend + frontend), then push them to Docker Hub.
+# If any step fails, nothing is pushed and the run is red.
+name: CI/CD # the deploy server checks this exact name
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test-build-push:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/auth-app
+      COMPOSE_PROJECT_NAME: authapp # compose names its images authapp-backend / authapp-frontend
+      POSTGRES_PASSWORD: ci-only-password # throwaway DB on the CI runner, not a real secret
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v5
+
+      # 1. Build the frontend and backend images and start the full stack
+      - name: Build images and start the stack
+        run: docker compose up -d --build --wait
+
+      - name: Wait until the API answers through the frontend
+        run: |
+          for i in $(seq 1 30); do
+            curl -fs http://localhost:5173/api/health && exit 0
+            sleep 2
+          done
+          echo "Stack did not become healthy"; docker compose logs; exit 1
+
+      # 2. Run the Playwright tests against it
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install test dependencies
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        run: npx playwright test # reuses the stack on :5173 (reuseExistingServer)
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      # 3. Tests passed: push the exact images that were tested
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Tag and push images
+        run: |
+          docker tag authapp-backend  "$IMAGE:backend"
+          docker tag authapp-frontend "$IMAGE:frontend"
+          docker push "$IMAGE:backend"
+          docker push "$IMAGE:frontend"
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
